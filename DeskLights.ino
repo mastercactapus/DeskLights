@@ -56,19 +56,15 @@ void setup() {
 
   loadSettings();
   Serial.begin(115200);
-  Serial.write("setup\n");
-
 }
 
 int nswState(int idx, byte state) {
   if (state == SWITCH_ON && swState[idx] != SWITCH_ON) {
-  	Serial.write("nate btn down\n");
     swState[idx] = SWITCH_ON;
 
     swTime[idx] = millis();	
   } 
   else if (state == SWITCH_OFF && swState[idx] != SWITCH_OFF) {
-  Serial.write("nate btn up\n");
     swState[idx] = SWITCH_OFF;
 
     unsigned long time = millis() - swTime[idx];
@@ -119,7 +115,6 @@ int kswState(byte state) {
 }
 
 void updateLights() {
-  Serial.write("updateLights()\n");
   for (int x = 0; x < 3; x++) {
     if (settings.lights[x] == LIGHT_ON) {
       analogWrite(ledPins[x], settings.pwm[x]);
@@ -182,7 +177,7 @@ void serialEvent() {
     settings.pwm[command.light] = command.pwm;
     break;
   case CMD_SETTINGS_READ:
-    Serial.write(((byte *) &settings), sizeof(Settings));
+    Serial.write((byte *)&settings, sizeof(Settings));
     Serial.flush();
     break;
   case CMD_SETTINGS_WRITE:

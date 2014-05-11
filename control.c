@@ -14,7 +14,10 @@ int open_port(char* device);
 int ping_pong(int fd);
 int light_command(int fd, char *argv[]);
 int set_opts(char *argv[], struct Command *cmd);
-
+int read_settings(int fd, struct Settings *settings);
+void print_settings(struct Settings *settings);
+void print_settings_hex(struct Settings *settings);
+int write_settings(int fd, char *settings);
 
 int main(int argc, char *argv[]) {
 	int fd = -1;
@@ -44,13 +47,28 @@ int main(int argc, char *argv[]) {
 
 			result = light_command(fd, &argv[3]);
 		} else if (strcmp(argv[2], "all") == 0) {
-
+			if (strcmp(argv[3], "pwm") == 0 && argc < 5) {
+				printf("Invalid number of parameters for all pwm\n");
+				usage(argv[0]);
+				close(fd);
+				return 1;
+			}
 			result = all_command(fd, &argv[3]);
 
 		} else if (strcmp(argv[2], "settings") == 0 && strcmp(argv[3], "read") == 0) {
-			
-		} else if (strcmp(argv[2], "settings") == 0 && strcmp(argv[3], "write") == 0) {
-			
+			struct Settings settings;
+			int n = read_settings(fd, &settings);
+			if (n != 0) {
+				close(fd);
+				return 1;
+			}
+			if (argc >= 5 && strcmp(argv[4], "hex") == 0) {
+				print_settings_hex(&settings);
+			} else {
+				print_settings(&settings);
+			}
+		} else if (strcmp(argv[2], "settings") == 0 && strcmp(argv[3], "write") == 0 && argc > 4) {
+			result = write_settings(fd, argv[4]);
 		} else {
 
 			printf("Invalid command\n\n");
@@ -71,6 +89,66 @@ void usage(char* cmdname) {
 	printf("\t%s <device> all on|off|pwm|clear [pwm value]\n", cmdname);
 	printf("\t%s <device> settings read [readable]\n", cmdname);
 	printf("\t%s <device> settings write <hex values>\n", cmdname);
+}
+
+int write_settings(int fd, char *settings) {
+	if (strlen(settings) != sizeof(struct Settings) * 2) {
+		fprintf(stderr, "Invalid length for settings");
+		return -1;
+	}
+
+	struct Settings new_settings;
+	int i;
+	for (i=0; i < sizeof(struct Settings); i++) {
+		sscanf(&settings[i*2], "%2x", &((char*)&new_settings)[i]);
+	}
+
+	printf("New Settings:\n");
+	print_settings(&new_settings);
+
+	struct Command cmd = { HEAD, CMD_SETTINGS_WRITE, 0, 0 };
+	int n = write(fd, &cmd, 4) + write(fd, &new_settings, sizeof(struct Settings));
+
+	if (n != 4 + sizeof(struct Settings)) {
+		perror("write_settings: failed to update settings");
+		return -1;
+	}
+
+	return 0;
+}
+
+int read_settings(int fd, struct Settings *settings) {
+	struct Command cmd = { HEAD, CMD_SETTINGS_READ, 0, 0 };
+
+	int n = write(fd, &cmd, 4);
+	if (n != 4) {
+		perror("light_command: failed to send command");
+		return -1;
+	}
+
+	n = read(fd, settings, sizeof(struct Settings));
+	if (n != sizeof(struct Settings)) {
+		perror("read_settings: failed to read settings");
+		return -1;
+	}
+
+	return 0;
+}
+
+void print_settings(struct Settings *settings){
+	int i;
+	for (i = 0; i < 3; i++) {
+		printf("Light%i: %s (PWM: %u)\n", i+1, settings->lights[i] == LIGHT_ON ? "on" : "off", settings->pwm[i]);
+	}
+}
+void print_settings_hex(struct Settings *settings){
+	unsigned char *ptr = (char *)settings;
+
+	int i;
+	for (i = 0; i < sizeof(struct Settings); i++) {
+		printf("%hhx", *ptr++);
+	}
+	printf("\n");
 }
 
 int light_command(int fd, char *argv[]) {
@@ -173,7 +251,7 @@ int open_port(char* device) {
 	    options.c_oflag &= ~OPOST; // make raw
 
 	    options.c_cc[VMIN] = 0;
-	    options.c_cc[VTIME] = 10;
+	    options.c_cc[VTIME] = 100;
 
 		tcsetattr(fd, TCSANOW, &options);
 
