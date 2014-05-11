@@ -12,12 +12,16 @@ const int ledPins[] = {
 const int swPins[] = {
   12, 7, 4};
 const unsigned long timeout = 400;
-
-byte swState[] = {
-  SWITCH_UNKNOWN, SWITCH_UNKNOWN, SWITCH_UNKNOWN};
-unsigned long swTime[2];
+const unsigned long updateTimeout = 1200;
 
 struct Settings settings = DEFAULT_SETTINGS;
+struct State state[] = {
+  { SWITCH_UNKNOWN, 0, PWM_OFF },
+  { SWITCH_UNKNOWN, 0, PWM_OFF },
+  { SWITCH_UNKNOWN, 0, PWM_OFF }
+};
+
+unsigned long lastUpdate;
 
 void saveSettings() {
   EEPROM.write(0, HEAD);
@@ -56,39 +60,22 @@ void setup() {
 
   loadSettings();
   Serial.begin(115200);
+  
+  lastUpdate = 0;
 }
 
-int nswState(int idx, byte state) {
-  if (state == SWITCH_ON && swState[idx] != SWITCH_ON) {
-    swState[idx] = SWITCH_ON;
+int nswState(int idx, byte newState) {
+  if (newState == SWITCH_ON && state[idx].sw != SWITCH_ON) {
+    state[idx].sw = SWITCH_ON;
 
-    swTime[idx] = millis();	
+    state[idx].time = millis();	
   } 
-  else if (state == SWITCH_OFF && swState[idx] != SWITCH_OFF) {
-    swState[idx] = SWITCH_OFF;
+  else if (newState == SWITCH_OFF && state[idx].sw != SWITCH_OFF) {
+    state[idx].sw = SWITCH_OFF;
 
-    unsigned long time = millis() - swTime[idx];
+    unsigned long time = millis() - state[idx].time;
     if (time > 5000) {
-      settings.pwm[0] = PWM_FULL;
-
-      settings.lights[0] = LIGHT_ON;
-      updateLights();
-      delay(100);
-      settings.lights[0] = LIGHT_OFF;
-      updateLights();
-      delay(100);
-      settings.lights[0] = LIGHT_ON;
-      updateLights();
-      delay(100);
-      settings.lights[0] = LIGHT_OFF;
-      updateLights();
-      delay(100);
-      settings.lights[0] = LIGHT_ON;
-      updateLights();
-      delay(100);
-      settings.lights[0] = LIGHT_OFF;
-      updateLights();
-      clearAll();			
+      clearAll();
     } else if (time > timeout) {
       settings.lights[idx] = ~settings.lights[idx];
     } else if (time > 50) {
@@ -104,10 +91,10 @@ int nswState(int idx, byte state) {
   return 0;
 }
 
-int kswState(byte state) {
-  if (swState[2] != state) {
-    settings.lights[2] = (state == SWITCH_ON) ? LIGHT_ON : LIGHT_OFF;
-    swState[2] = state;
+int kswState(byte newState) {
+  if (state[2].sw != newState) {
+    settings.lights[2] = (newState == SWITCH_ON) ? LIGHT_ON : LIGHT_OFF;
+    state[2].sw = newState;
     return 1;
   }
 
@@ -115,15 +102,19 @@ int kswState(byte state) {
 }
 
 void updateLights() {
+  unsigned long time = micros();
+  if (time - lastUpdate < updateTimeout) return;
+  byte pwm;
   for (int x = 0; x < 3; x++) {
-    if (settings.lights[x] == LIGHT_ON) {
-      analogWrite(ledPins[x], settings.pwm[x]);
-    } 
-    else {
-      analogWrite(ledPins[x], PWM_OFF);
-    }
+    pwm = settings.lights[x] == LIGHT_OFF ? PWM_OFF : settings.pwm[x];
+
+    if (state[x].pwm < pwm) state[x].pwm++;
+    else if (state[x].pwm > pwm) state[x].pwm--;
+    else continue;
+
+    analogWrite(ledPins[x], state[x].pwm);
   }
-  saveSettings();
+  lastUpdate = time;
 }
 
 void loop() {
@@ -135,8 +126,10 @@ void loop() {
   update += kswState((LOW == digitalRead(swPins[2])) ? SWITCH_ON : SWITCH_OFF);
 
   if (update > 0) {
-    updateLights();
+    saveSettings();
   }
+
+  updateLights();
 }
 void serialEvent() {
   struct Command command;
@@ -192,7 +185,7 @@ void serialEvent() {
     return;
   }
 
-  updateLights();
+  saveSettings();
 }
 
 

@@ -39,3 +39,9 @@ struct Settings {
   byte lights[3];
   byte pwm[3];
 };
+
+struct State {
+	byte sw;
+	unsigned long time;
+	byte pwm;
+};
