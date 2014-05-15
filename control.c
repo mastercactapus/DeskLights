@@ -251,7 +251,7 @@ int open_port(char* device) {
 	    options.c_oflag &= ~OPOST; // make raw
 
 	    options.c_cc[VMIN] = 0;
-	    options.c_cc[VTIME] = 100;
+	    options.c_cc[VTIME] = 5;
 
 		tcsetattr(fd, TCSANOW, &options);
 
